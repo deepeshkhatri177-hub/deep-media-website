@@ -6,8 +6,10 @@ app = Flask(__name__)
 def home():
     return """
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Deep Media Group</title>
 
         <style>
@@ -18,96 +20,100 @@ def home():
             body {
                 margin: 0;
                 min-height: 100vh;
+                padding: 55px 20px;
                 color: white;
                 font-family: Arial, sans-serif;
                 text-align: center;
-                padding: 55px 20px;
-                overflow-x: hidden;
-            }
-
-            #bgvideo {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                z-index: -2;
-            }
-
-            .overlay {
-                position: fixed;
-                inset: 0;
-                background: rgba(0, 0, 0, 0.64);
-                z-index: -1;
+                background: linear-gradient(-45deg, #050b2c, #102b6a, #5a1674, #007b9e);
+                background-size: 400% 400%;
+                animation: gradientMove 12s ease infinite;
             }
 
             .hero-title {
-                color: #00bfff;
+                color: white;
                 font-size: clamp(38px, 7vw, 68px);
                 margin: 0;
-                animation: titleUp 1.2s ease-out both, glow 2s ease-in-out infinite alternate;
+                animation: titleUp 1s ease-out both, glow 2s ease-in-out infinite alternate;
             }
 
             .hero-subtitle {
+                color: #a8eaff;
                 font-size: clamp(20px, 3vw, 28px);
                 margin: 18px 0;
-                animation: fadeIn 1.5s ease-out 0.5s both;
+                animation: fadeIn 1.5s ease-out 0.4s both;
             }
 
             .intro {
                 max-width: 700px;
-                margin: 0 auto 32px;
+                margin: 20px auto 35px;
                 line-height: 1.7;
-                animation: fadeIn 1.5s ease-out 0.9s both;
+                color: #e8f8ff;
+                animation: fadeIn 1.5s ease-out 0.8s both;
             }
 
             .box {
-                background: rgba(0, 0, 0, 0.66);
-                backdrop-filter: blur(7px);
-                padding: 24px;
-                border: 1px solid rgba(0, 191, 255, 0.35);
-                border-radius: 16px;
-                margin: 22px auto;
                 width: min(760px, 92%);
+                margin: 22px auto;
+                padding: 25px;
+                border-radius: 20px;
+                background: rgba(255, 255, 255, 0.12);
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+                backdrop-filter: blur(12px);
                 line-height: 1.65;
                 animation: fadeInUp 0.8s ease-out both;
-                transition: transform 0.3s ease, border-color 0.3s ease;
+                transition: 0.3s ease;
             }
 
             .box:hover {
-                transform: translateY(-6px);
-                border-color: #00bfff;
+                transform: translateY(-7px);
+                background: rgba(255, 255, 255, 0.18);
             }
 
             .box h2 {
-                color: #00bfff;
+                color: #7cecff;
+                margin-top: 0;
+            }
+
+            .service-list p {
+                margin: 9px 0;
             }
 
             .btn {
                 display: inline-block;
-                background: #00bfff;
+                background: linear-gradient(90deg, #00bfff, #8b5cf6);
                 color: white;
-                padding: 13px 22px;
-                border-radius: 10px;
+                padding: 14px 24px;
+                border-radius: 30px;
                 font-size: 17px;
                 font-weight: bold;
                 transition: 0.3s ease;
             }
 
             .btn:hover {
-                background: white;
-                color: #0077a8;
-                transform: scale(1.05);
+                transform: scale(1.08);
+                box-shadow: 0 0 22px #00bfff;
             }
 
             a {
                 text-decoration: none;
             }
 
+            @keyframes gradientMove {
+                0% { background-position: 0% 50%; }
+                50% { background-position: 100% 50%; }
+                100% { background-position: 0% 50%; }
+            }
+
             @keyframes titleUp {
-                from { opacity: 0; transform: translateY(45px); }
-                to { opacity: 1; transform: translateY(0); }
+                from {
+                    opacity: 0;
+                    transform: translateY(40px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
             }
 
             @keyframes fadeIn {
@@ -116,26 +122,29 @@ def home():
             }
 
             @keyframes fadeInUp {
-                from { opacity: 0; transform: translateY(25px); }
-                to { opacity: 1; transform: translateY(0); }
+                from {
+                    opacity: 0;
+                    transform: translateY(25px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
             }
 
             @keyframes glow {
                 from { text-shadow: 0 0 10px #00bfff; }
-                to { text-shadow: 0 0 28px #00bfff, 0 0 48px #0077ff; }
+                to { text-shadow: 0 0 28px #8b5cf6; }
             }
         </style>
     </head>
 
     <body>
-        <video autoplay muted loop playsinline id="bgvideo">
-            <source src="/static/background.mp4" type="video/mp4">
-        </video>
-
-        <div class="overlay"></div>
-
         <h1 class="hero-title">Deep Media Group</h1>
-        <h2 class="hero-subtitle">Professional Video Editing Services 🎬</h2>
+
+        <h2 class="hero-subtitle">
+            Professional Video Editing Services 🎬
+        </h2>
 
         <p class="intro">
             High Quality Reels, Wedding Edits, Anniversary Videos,
@@ -146,12 +155,12 @@ def home():
             <h2>About Me</h2>
             <p>
                 Hi, I'm Deepesh. I help clients transform their raw footage
-                into professional and engaging videos for social media and
-                personal memories.
+                into professional and engaging videos for social media
+                and personal memories.
             </p>
         </div>
 
-        <div class="box">
+        <div class="box service-list">
             <h2>Services Available ✅</h2>
             <p>💍 Wedding Video Editing</p>
             <p>🎉 Anniversary Video Editing</p>
