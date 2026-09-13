@@ -1,14 +1,16 @@
 import os
+import sqlite3
 import secrets
 from uuid import uuid4
 from html import escape
 
-from flask import Flask, request, redirect, url_for
+from flask import Flask, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
 UPLOAD_FOLDER = os.path.join(app.static_folder, "uploads")
+DATABASE = "deep_media.db"
 UPLOAD_PASSWORD = os.environ.get("UPLOAD_PASSWORD", "ChangeThisPassword123")
 
 ALLOWED_EXTENSIONS = {"mp4", "webm", "mov", "jpg", "jpeg", "png", "webp"}
@@ -19,11 +21,55 @@ app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
+def get_db():
+    connection = sqlite3.connect(DATABASE)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def setup_database():
+    connection = get_db()
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS likes (
+            media_name TEXT PRIMARY KEY,
+            total_likes INTEGER DEFAULT 0
+        )
+    """)
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_name TEXT NOT NULL,
+            person_name TEXT NOT NULL,
+            comment_text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    connection.commit()
+    connection.close()
+
+
+setup_database()
+
+
 def allowed_file(filename):
     return (
         "." in filename
         and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
     )
+
+
+def get_likes(media_name):
+    connection = get_db()
+    result = connection.execute(
+        "SELECT total_likes FROM likes WHERE media_name = ?",
+        (media_name,)
+    ).fetchone()
+    connection.close()
+
+    return result["total_likes"] if result else 0
 
 
 @app.route("/")
@@ -42,28 +88,40 @@ def home():
     for file in files:
         extension = file.rsplit(".", 1)[-1].lower()
         file_url = url_for("static", filename=f"uploads/{file}")
-        file_name = escape(file)
+        safe_file = escape(file, quote=True)
+        safe_url = escape(file_url, quote=True)
+        likes = get_likes(file)
 
         if extension in {"mp4", "webm", "mov"}:
-            gallery += f"""
-            <div class="project-card">
-                <video controls preload="metadata">
-                    <source src="{file_url}">
-                    Your browser does not support video.
-                </video>
-                <p>{file_name}</p>
-            </div>
+            preview = f"""
+            <video muted loop playsinline preload="metadata">
+                <source src="{safe_url}">
+            </video>
+            <div class="play-icon">▶</div>
             """
+            media_type = "video"
         else:
-            gallery += f"""
-            <div class="project-card">
-                <img src="{file_url}" alt="{file_name}">
-                <p>{file_name}</p>
+            preview = f'<img src="{safe_url}" alt="{safe_file}">'
+            media_type = "image"
+
+        gallery += f"""
+        <div class="project-card"
+             data-name="{safe_file}"
+             data-url="{safe_url}"
+             data-type="{media_type}">
+            <div class="media-preview">
+                {preview}
             </div>
-            """
+
+            <div class="project-info">
+                <p>{safe_file}</p>
+                <span>❤ {likes} likes &nbsp; 💬 Comments</span>
+            </div>
+        </div>
+        """
 
     if not gallery:
-        gallery = "<p class='empty'>No samples uploaded yet.</p>"
+        gallery = "<p class='empty'>No projects uploaded yet.</p>"
 
     return f"""
     <!DOCTYPE html>
@@ -109,26 +167,19 @@ def home():
                 margin: 20px auto 35px;
                 line-height: 1.7;
                 color: #e8f8ff;
-                animation: fadeIn 1.5s ease-out 0.8s both;
             }}
 
             .box {{
-                width: min(900px, 92%);
-                margin: 22px auto;
-                padding: 25px;
-                border-radius: 20px;
+                width: min(1050px, 94%);
+                margin: 25px auto;
+                padding: 28px;
+                border-radius: 22px;
                 background: rgba(255, 255, 255, 0.12);
                 border: 1px solid rgba(255, 255, 255, 0.25);
                 box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
                 backdrop-filter: blur(12px);
                 line-height: 1.65;
                 animation: fadeInUp 0.8s ease-out both;
-                transition: 0.3s ease;
-            }}
-
-            .box:hover {{
-                transform: translateY(-7px);
-                background: rgba(255, 255, 255, 0.18);
             }}
 
             .box h2 {{
@@ -138,6 +189,74 @@ def home():
 
             .service-list p {{
                 margin: 9px 0;
+            }}
+
+            .gallery {{
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                gap: 18px;
+                margin-top: 22px;
+            }}
+
+            .project-card {{
+                overflow: hidden;
+                border-radius: 16px;
+                text-align: left;
+                cursor: pointer;
+                background: rgba(0, 0, 0, 0.42);
+                border: 1px solid rgba(124, 236, 255, 0.35);
+                transition: 0.3s ease;
+            }}
+
+            .project-card:hover {{
+                transform: translateY(-8px);
+                border-color: #7cecff;
+                box-shadow: 0 0 24px rgba(0, 191, 255, 0.45);
+            }}
+
+            .media-preview {{
+                height: 205px;
+                position: relative;
+                overflow: hidden;
+                background: #050505;
+            }}
+
+            .media-preview video,
+            .media-preview img {{
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }}
+
+            .play-icon {{
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 0, 0, 0.65);
+                border: 1px solid white;
+                width: 48px;
+                height: 48px;
+                border-radius: 50%;
+                text-align: center;
+                padding: 12px 0 0 3px;
+            }}
+
+            .project-info {{
+                padding: 12px;
+            }}
+
+            .project-info p {{
+                margin: 0 0 5px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }}
+
+            .project-info span {{
+                color: #bdefff;
+                font-size: 13px;
             }}
 
             input {{
@@ -157,13 +276,13 @@ def home():
                 color: white;
                 padding: 14px 24px;
                 border-radius: 30px;
-                font-size: 17px;
+                font-size: 16px;
                 font-weight: bold;
                 transition: 0.3s ease;
             }}
 
             .btn:hover {{
-                transform: scale(1.08);
+                transform: scale(1.06);
                 box-shadow: 0 0 22px #00bfff;
             }}
 
@@ -181,37 +300,96 @@ def home():
                 font-weight: bold;
             }}
 
-            .gallery {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-                gap: 18px;
-                margin-top: 20px;
-            }}
-
-            .project-card {{
-                overflow: hidden;
-                border-radius: 14px;
-                background: rgba(0, 0, 0, 0.35);
-                border: 1px solid rgba(124, 236, 255, 0.35);
-            }}
-
-            .project-card video,
-            .project-card img {{
-                width: 100%;
-                height: 190px;
-                display: block;
-                object-fit: cover;
-                background: #000;
-            }}
-
-            .project-card p {{
-                padding: 10px;
-                margin: 0;
-                overflow-wrap: anywhere;
-            }}
-
             .empty {{
                 color: #d7f8ff;
+            }}
+
+            .modal {{
+                display: none;
+                position: fixed;
+                inset: 0;
+                z-index: 10;
+                padding: 20px;
+                background: rgba(0, 0, 0, 0.86);
+                overflow-y: auto;
+            }}
+
+            .modal-content {{
+                position: relative;
+                width: min(900px, 96%);
+                margin: 25px auto;
+                padding: 20px;
+                border-radius: 20px;
+                background: #0c1233;
+                border: 1px solid rgba(124, 236, 255, 0.45);
+                text-align: left;
+            }}
+
+            .close {{
+                position: absolute;
+                top: 10px;
+                right: 16px;
+                color: white;
+                font-size: 34px;
+                cursor: pointer;
+            }}
+
+            #modalMedia video,
+            #modalMedia img {{
+                width: 100%;
+                max-height: 560px;
+                object-fit: contain;
+                background: black;
+                border-radius: 12px;
+            }}
+
+            .modal-actions {{
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin: 18px 0;
+            }}
+
+            .like-btn {{
+                border: 1px solid #ff7bbd;
+                color: white;
+                cursor: pointer;
+                padding: 10px 17px;
+                border-radius: 25px;
+                font-size: 16px;
+                background: rgba(255, 50, 150, 0.15);
+            }}
+
+            .like-btn:hover {{
+                background: #d72c77;
+            }}
+
+            .comments {{
+                margin-top: 15px;
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+                padding-top: 16px;
+            }}
+
+            .comment {{
+                padding: 10px;
+                margin: 8px 0;
+                border-radius: 10px;
+                background: rgba(255, 255, 255, 0.08);
+            }}
+
+            .comment strong {{
+                color: #7cecff;
+            }}
+
+            .comment-form {{
+                display: flex;
+                gap: 8px;
+                margin-top: 12px;
+            }}
+
+            .comment-form input {{
+                margin: 0;
+                flex: 1;
             }}
 
             @keyframes gradientMove {{
@@ -221,14 +399,8 @@ def home():
             }}
 
             @keyframes titleUp {{
-                from {{
-                    opacity: 0;
-                    transform: translateY(40px);
-                }}
-                to {{
-                    opacity: 1;
-                    transform: translateY(0);
-                }}
+                from {{ opacity: 0; transform: translateY(40px); }}
+                to {{ opacity: 1; transform: translateY(0); }}
             }}
 
             @keyframes fadeIn {{
@@ -237,19 +409,41 @@ def home():
             }}
 
             @keyframes fadeInUp {{
-                from {{
-                    opacity: 0;
-                    transform: translateY(25px);
-                }}
-                to {{
-                    opacity: 1;
-                    transform: translateY(0);
-                }}
+                from {{ opacity: 0; transform: translateY(25px); }}
+                to {{ opacity: 1; transform: translateY(0); }}
             }}
 
             @keyframes glow {{
                 from {{ text-shadow: 0 0 10px #00bfff; }}
                 to {{ text-shadow: 0 0 28px #8b5cf6; }}
+            }}
+
+            @media (max-width: 600px) {{
+                body {{
+                    padding: 38px 12px;
+                }}
+
+                .box {{
+                    width: 100%;
+                    padding: 20px 14px;
+                }}
+
+                .gallery {{
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 10px;
+                }}
+
+                .media-preview {{
+                    height: 150px;
+                }}
+
+                .project-info {{
+                    padding: 8px;
+                }}
+
+                .comment-form {{
+                    flex-direction: column;
+                }}
             }}
         </style>
     </head>
@@ -289,6 +483,8 @@ def home():
 
         <div class="box">
             <h2>My Projects & Samples 🎞️</h2>
+            <p>Click any project to watch it, like it or leave a comment.</p>
+
             <div class="gallery">
                 {gallery}
             </div>
@@ -321,6 +517,161 @@ def home():
                 <span class="btn">Contact on Instagram</span>
             </a>
         </div>
+
+        <div class="modal" id="mediaModal">
+            <div class="modal-content">
+                <span class="close" id="closeModal">&times;</span>
+
+                <div id="modalMedia"></div>
+
+                <h2 id="modalTitle"></h2>
+
+                <div class="modal-actions">
+                    <button class="like-btn" id="likeButton">
+                        ❤ Like (<span id="likeCount">0</span>)
+                    </button>
+                </div>
+
+                <div class="comments">
+                    <h3>Comments 💬</h3>
+
+                    <div id="commentsList"></div>
+
+                    <form class="comment-form" id="commentForm">
+                        <input type="text" id="personName"
+                               placeholder="Your name" maxlength="30" required>
+
+                        <input type="text" id="commentText"
+                               placeholder="Write a comment..." maxlength="300" required>
+
+                        <button class="btn" type="submit">Post</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            let currentMedia = "";
+
+            const modal = document.getElementById("mediaModal");
+            const modalMedia = document.getElementById("modalMedia");
+            const modalTitle = document.getElementById("modalTitle");
+            const likeCount = document.getElementById("likeCount");
+            const commentsList = document.getElementById("commentsList");
+
+            document.querySelectorAll(".project-card").forEach(function(card) {{
+                card.addEventListener("click", function() {{
+                    currentMedia = card.dataset.name;
+                    const url = card.dataset.url;
+                    const type = card.dataset.type;
+
+                    modalTitle.textContent = currentMedia;
+
+                    if (type === "video") {{
+                        modalMedia.innerHTML =
+                            '<video controls autoplay playsinline>' +
+                            '<source src="' + url + '">' +
+                            '</video>';
+                    }} else {{
+                        modalMedia.innerHTML =
+                            '<img src="' + url + '" alt="Project image">';
+                    }}
+
+                    modal.style.display = "block";
+                    loadLikes();
+                    loadComments();
+                }});
+            }});
+
+            document.getElementById("closeModal").addEventListener("click", closeModal);
+
+            modal.addEventListener("click", function(event) {{
+                if (event.target === modal) {{
+                    closeModal();
+                }}
+            }});
+
+            function closeModal() {{
+                modal.style.display = "none";
+                modalMedia.innerHTML = "";
+            }}
+
+            function loadLikes() {{
+                fetch("/likes?media=" + encodeURIComponent(currentMedia))
+                    .then(response => response.json())
+                    .then(data => {{
+                        likeCount.textContent = data.likes;
+                    }});
+            }}
+
+            document.getElementById("likeButton").addEventListener("click", function() {{
+                fetch("/like", {{
+                    method: "POST",
+                    headers: {{
+                        "Content-Type": "application/json"
+                    }},
+                    body: JSON.stringify({{ media: currentMedia }})
+                }})
+                .then(response => response.json())
+                .then(data => {{
+                    likeCount.textContent = data.likes;
+                }});
+            }});
+
+            function loadComments() {{
+                commentsList.innerHTML = "Loading comments...";
+
+                fetch("/comments?media=" + encodeURIComponent(currentMedia))
+                    .then(response => response.json())
+                    .then(data => {{
+                        commentsList.innerHTML = "";
+
+                        if (data.comments.length === 0) {{
+                            commentsList.innerHTML = "<p>No comments yet.</p>";
+                            return;
+                        }}
+
+                        data.comments.forEach(function(comment) {{
+                            const commentBox = document.createElement("div");
+                            commentBox.className = "comment";
+
+                            const name = document.createElement("strong");
+                            name.textContent = comment.name + ": ";
+
+                            const text = document.createElement("span");
+                            text.textContent = comment.text;
+
+                            commentBox.appendChild(name);
+                            commentBox.appendChild(text);
+                            commentsList.appendChild(commentBox);
+                        }});
+                    }});
+            }}
+
+            document.getElementById("commentForm").addEventListener("submit", function(event) {{
+                event.preventDefault();
+
+                const name = document.getElementById("personName").value;
+                const text = document.getElementById("commentText").value;
+
+                fetch("/comment", {{
+                    method: "POST",
+                    headers: {{
+                        "Content-Type": "application/json"
+                    }},
+                    body: JSON.stringify({{
+                        media: currentMedia,
+                        name: name,
+                        text: text
+                    }})
+                }})
+                .then(response => response.json())
+                .then(() => {{
+                    document.getElementById("commentText").value = "";
+                    loadComments();
+                }});
+            }});
+        </script>
     </body>
     </html>
     """
@@ -350,6 +701,94 @@ def upload():
     file.save(os.path.join(app.config["UPLOAD_FOLDER"], unique_name))
 
     return redirect(url_for("home", message="Project uploaded successfully!"))
+
+
+@app.route("/likes")
+def likes():
+    media_name = request.args.get("media", "")
+    return jsonify({"likes": get_likes(media_name)})
+
+
+@app.route("/like", methods=["POST"])
+def like():
+    data = request.get_json()
+    media_name = data.get("media", "")
+
+    if not media_name:
+        return jsonify({"error": "Project not found"}), 400
+
+    connection = get_db()
+
+    connection.execute("""
+        INSERT INTO likes (media_name, total_likes)
+        VALUES (?, 1)
+        ON CONFLICT(media_name)
+        DO UPDATE SET total_likes = total_likes + 1
+    """, (media_name,))
+
+    connection.commit()
+
+    result = connection.execute(
+        "SELECT total_likes FROM likes WHERE media_name = ?",
+        (media_name,)
+    ).fetchone()
+
+    connection.close()
+
+    return jsonify({"likes": result["total_likes"]})
+
+
+@app.route("/comments")
+def comments():
+    media_name = request.args.get("media", "")
+
+    connection = get_db()
+
+    rows = connection.execute("""
+        SELECT person_name, comment_text
+        FROM comments
+        WHERE media_name = ?
+        ORDER BY id DESC
+    """, (media_name,)).fetchall()
+
+    connection.close()
+
+    return jsonify({
+        "comments": [
+            {
+                "name": row["person_name"],
+                "text": row["comment_text"]
+            }
+            for row in rows
+        ]
+    })
+
+
+@app.route("/comment", methods=["POST"])
+def comment():
+    data = request.get_json()
+
+    media_name = data.get("media", "").strip()
+    person_name = data.get("name", "").strip()
+    comment_text = data.get("text", "").strip()
+
+    if not media_name or not person_name or not comment_text:
+        return jsonify({"error": "Missing comment details"}), 400
+
+    if len(person_name) > 30 or len(comment_text) > 300:
+        return jsonify({"error": "Comment is too long"}), 400
+
+    connection = get_db()
+
+    connection.execute("""
+        INSERT INTO comments (media_name, person_name, comment_text)
+        VALUES (?, ?, ?)
+    """, (media_name, person_name, comment_text))
+
+    connection.commit()
+    connection.close()
+
+    return jsonify({"success": True})
 
 
 @app.errorhandler(413)
